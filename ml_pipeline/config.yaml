@@ -1,0 +1,70 @@
+# ML Pipeline Configuration
+project: nba-cross-sell-engine
+experiment: propensity-model-v2
+
+# Data
+data:
+  raw_path: ../data/
+  processed_path: ../data/processed/
+  feature_store_path: ../data/feature_store/
+  netflix_path: ../data/netflix_prize/
+  
+# Netflix Dataset Configuration
+netflix:
+  enabled: true
+  source: https://www.kaggle.com/datasets/netflix-inc/netflix-prize-data
+  description: Netflix Prize dataset with 100M+ ratings from 480K users
+  data_files:
+    - combined_data_1.txt
+    - combined_data_2.txt
+    - combined_data_3.txt
+    - combined_data_4.txt
+    - movie_titles.csv
+  chunk_size: 100000  # Process in 100K rating chunks
+  sampling:
+    enabled: true  # Use sampling for initial runs
+    sample_fraction: 0.1  # Use 10% of data for quick iterations
+
+# Model
+model:
+  name: xgboost_propensity
+  version: v2.0
+  type: classifier
+  hyperparameters:
+    n_estimators: 200
+    max_depth: 5
+    learning_rate: 0.05
+    subsample: 0.8
+    colsample_bytree: 0.8
+  
+# Training
+training:
+  test_size: 0.2
+  random_state: 42
+  cross_validation_folds: 5
+  early_stopping_rounds: 20
+
+# MLflow
+mlflow:
+  tracking_uri: http://localhost:5000
+  experiment_name: nba_propensity
+  registry_uri: http://localhost:5000
+
+# Features
+features:
+  numerical:
+    - recency_days
+    - frequency
+    - monetary
+    - tenure_days
+    - num_products
+    - engagement_score
+    - days_since_service
+  binary:
+    - had_claim_60d
+    - renewal_in_30_days
+    - owns_A
+    - owns_B
+    - owns_C
+  count:
+    - lost_quotation_count

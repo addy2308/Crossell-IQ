@@ -1,0 +1,325 @@
+# GitLab CI/CD Pipeline Configuration
+# Netflix Cross-Sell Model Continuous Integration and Deployment
+
+image: ubuntu:22.04
+
+variables:
+  DOCKER_DRIVER: overlay2
+  DOCKER_TLS_CERTDIR: "/certs"
+  PYTHON_VERSION: "3.10"
+  NODE_VERSION: "18"
+
+stages:
+  - test
+  - build
+  - scan
+  - deploy
+
+# Define runners
+default:
+  tags:
+    - docker
+    - linux
+
+# ============================================================================
+# TEST STAGE
+# ============================================================================
+
+test:backend:
+  stage: test
+  image: python:${PYTHON_VERSION}
+  services:
+    - postgres:15
+    - redis:7
+  variables:
+    POSTGRES_USER: test
+    POSTGRES_PASSWORD: test
+    POSTGRES_DB: crosssell_test
+    DATABASE_URL: "postgresql://test:test@postgres:5432/crosssell_test"
+    REDIS_URL: "redis://redis:6379/0"
+  before_script:
+    - pip install --upgrade pip
+    - pip install -r backend/requirements.txt pytest pytest-cov
+  script:
+    - cd backend
+    - pytest tests/ -v --cov=app --cov-report=xml --cov-report=term
+  artifacts:
+    reports:
+      coverage_report:
+        coverage_format: cobertura
+        path: backend/coverage.xml
+    paths:
+      - backend/coverage.xml
+    expire_in: 30 days
+  coverage: '/TOTAL\s+\d+\s+\d+\s+(\d+%)/'
+
+test:frontend:
+  stage: test
+  image: node:${NODE_VERSION}
+  before_script:
+    - cd frontend_react
+    - npm ci
+  script:
+    - npm run lint
+    - npm test -- --coverage --watchAll=false
+  artifacts:
+    paths:
+      - frontend_react/coverage/
+    expire_in: 30 days
+
+test:load:
+  stage: test
+  image: python:${PYTHON_VERSION}
+  before_script:
+    - pip install --upgrade pip
+    - pip install pytest requests
+  script:
+    - cd tests
+    - pytest test_api_load.py::TestAPIPerformance -v --tb=short
+  only:
+    - merge_requests
+    - main
+    - develop
+
+test:security:
+  stage: test
+  image: python:${PYTHON_VERSION}
+  before_script:
+    - pip install --upgrade pip
+    - pip install bandit safety
+  script:
+    - bandit -r backend/ -f json -o bandit-report.json || true
+    - safety check --json > safety-report.json || true
+  artifacts:
+    paths:
+      - bandit-report.json
+      - safety-report.json
+    expire_in: 30 days
+
+# ============================================================================
+# BUILD STAGE
+# ============================================================================
+
+build:backend:
+  stage: build
+  image: docker:latest
+  services:
+    - docker:dind
+  variables:
+    DOCKER_REGISTRY: ${CI_REGISTRY}
+    IMAGE_NAME: ${CI_REGISTRY_IMAGE}/backend
+  before_script:
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+  script:
+    - docker build -t ${IMAGE_NAME}:${CI_COMMIT_SHA} -t ${IMAGE_NAME}:latest backend/
+    - docker push ${IMAGE_NAME}:${CI_COMMIT_SHA}
+    - docker push ${IMAGE_NAME}:latest
+  only:
+    - main
+    - develop
+    - tags
+
+build:frontend:
+  stage: build
+  image: docker:latest
+  services:
+    - docker:dind
+  variables:
+    DOCKER_REGISTRY: ${CI_REGISTRY}
+    IMAGE_NAME: ${CI_REGISTRY_IMAGE}/frontend
+  before_script:
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+  script:
+    - docker build -t ${IMAGE_NAME}:${CI_COMMIT_SHA} -t ${IMAGE_NAME}:latest frontend_react/
+    - docker push ${IMAGE_NAME}:${CI_COMMIT_SHA}
+    - docker push ${IMAGE_NAME}:latest
+  only:
+    - main
+    - develop
+    - tags
+
+build:ml-pipeline:
+  stage: build
+  image: docker:latest
+  services:
+    - docker:dind
+  variables:
+    DOCKER_REGISTRY: ${CI_REGISTRY}
+    IMAGE_NAME: ${CI_REGISTRY_IMAGE}/ml-pipeline
+  before_script:
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+  script:
+    - docker build -t ${IMAGE_NAME}:${CI_COMMIT_SHA} -t ${IMAGE_NAME}:latest ml_pipeline/
+    - docker push ${IMAGE_NAME}:${CI_COMMIT_SHA}
+    - docker push ${IMAGE_NAME}:latest
+  only:
+    - main
+    - develop
+    - tags
+
+# ============================================================================
+# SCAN STAGE
+# ============================================================================
+
+scan:trivy:
+  stage: scan
+  image: aquasec/trivy:latest
+  script:
+    - trivy fs --format json --output trivy-report.json .
+    - trivy fs --severity HIGH,CRITICAL .
+  artifacts:
+    reports:
+      container_scanning: trivy-report.json
+    paths:
+      - trivy-report.json
+    expire_in: 30 days
+  only:
+    - merge_requests
+    - main
+    - develop
+
+scan:sast:
+  stage: scan
+  image: python:${PYTHON_VERSION}
+  before_script:
+    - pip install bandit
+  script:
+    - bandit -r backend/ -f json -o bandit-report.json || true
+    - cat bandit-report.json
+  artifacts:
+    reports:
+      sast: bandit-report.json
+    expire_in: 30 days
+  only:
+    - merge_requests
+    - main
+    - develop
+
+# ============================================================================
+# DEPLOY STAGE
+# ============================================================================
+
+deploy:staging:
+  stage: deploy
+  image: alpine:latest
+  environment:
+    name: staging
+    url: https://staging-netflix-api.example.com
+    deployment_tier: staging
+  before_script:
+    - apk add --no-cache openssh-client
+    - mkdir -p ~/.ssh
+    - echo "$STAGING_DEPLOY_KEY" | base64 -d > ~/.ssh/id_rsa
+    - chmod 600 ~/.ssh/id_rsa
+    - ssh-keyscan -H $STAGING_HOST >> ~/.ssh/known_hosts
+  script:
+    - ssh deploy@${STAGING_HOST} "cd /opt/netflix-api && docker-compose pull && docker-compose up -d"
+    - sleep 10
+    - ssh deploy@${STAGING_HOST} "curl -f http://localhost:8000/health || exit 1"
+  only:
+    - develop
+  when: manual
+
+deploy:production:
+  stage: deploy
+  image: alpine:latest
+  environment:
+    name: production
+    url: https://netflix-api.example.com
+    deployment_tier: production
+  before_script:
+    - apk add --no-cache openssh-client
+    - mkdir -p ~/.ssh
+    - echo "$PRODUCTION_DEPLOY_KEY" | base64 -d > ~/.ssh/id_rsa
+    - chmod 600 ~/.ssh/id_rsa
+    - ssh-keyscan -H $PRODUCTION_HOST >> ~/.ssh/known_hosts
+  script:
+    - ssh deploy@${PRODUCTION_HOST} "cd /opt/netflix-api && docker-compose pull && docker-compose up -d"
+    - sleep 10
+    - ssh deploy@${PRODUCTION_HOST} "curl -f http://localhost:8000/health || exit 1"
+  only:
+    - main
+    - tags
+  when: manual
+
+# ============================================================================
+# SCHEDULED JOBS
+# ============================================================================
+
+train:model:daily:
+  stage: build
+  image: python:${PYTHON_VERSION}
+  services:
+    - postgres:15
+    - redis:7
+  variables:
+    POSTGRES_USER: netflix
+    POSTGRES_PASSWORD: netflix
+    POSTGRES_DB: netflix_ml
+  before_script:
+    - pip install --upgrade pip
+    - pip install -r backend/requirements.txt
+    - pip install kaggle xgboost scikit-learn pandas numpy
+    - mkdir -p ~/.kaggle
+    - echo "$KAGGLE_API_JSON" > ~/.kaggle/kaggle.json
+    - chmod 600 ~/.kaggle/kaggle.json
+  script:
+    - cd ml_pipeline
+    - python netflix_integration.py << EOF
+      2
+      EOF
+  artifacts:
+    paths:
+      - models/netflix_*
+      - data/processed/netflix_features.parquet
+    expire_in: 90 days
+  only:
+    - schedules
+
+# ============================================================================
+# NOTIFICATIONS
+# ============================================================================
+
+success:notification:
+  stage: .post
+  image: curlimages/curl:latest
+  script:
+    - |
+      curl -X POST $SLACK_WEBHOOK_URL -H 'Content-Type: application/json' -d '{
+        "text": "✅ Netflix API Pipeline Successful",
+        "blocks": [
+          {
+            "type": "section",
+            "text": {
+              "type": "mrkdwn",
+              "text": "✅ *Pipeline Successful*\nProject: '$CI_PROJECT_NAME'\nBranch: '$CI_COMMIT_REF_NAME'\nCommit: '$CI_COMMIT_SHORT_SHA'\nAuthor: '$CI_COMMIT_AUTHOR'"
+            }
+          }
+        ]
+      }'
+  when: on_success
+  only:
+    - main
+    - develop
+
+failure:notification:
+  stage: .post
+  image: curlimages/curl:latest
+  script:
+    - |
+      curl -X POST $SLACK_WEBHOOK_URL -H 'Content-Type: application/json' -d '{
+        "text": "❌ Netflix API Pipeline Failed",
+        "blocks": [
+          {
+            "type": "section",
+            "text": {
+              "type": "mrkdwn",
+              "text": "❌ *Pipeline Failed*\nProject: '$CI_PROJECT_NAME'\nBranch: '$CI_COMMIT_REF_NAME'\nCommit: '$CI_COMMIT_SHORT_SHA'\nAuthor: '$CI_COMMIT_AUTHOR'"
+            }
+          }
+        ]
+      }'
+  when: on_failure
+  only:
+    - main
+    - develop

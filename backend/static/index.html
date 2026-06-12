@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="description" content="CrossSell IQ - AI-powered cross-sell prediction dashboard">
+<meta name="theme-color" content="#060b14">
+<title>CrossSell IQ | Revenue Intelligence</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>tailwind.config={theme:{extend:{colors:{brand:{50:'#eff6ff',100:'#dbeafe',200:'#bfdbfe',300:'#93c5fd',400:'#60a5fa',500:'#3b82f6',600:'#2563eb',700:'#1d4ed8',800:'#1e40af',900:'#1e3a8a'}},fontFamily:{sans:['Inter','system-ui','sans-serif']}}}}</script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Inter',system-ui,sans-serif;background:#060b14;color:#e2e8f0;overflow-x:hidden;min-height:100vh}
+.light body, .light{background:#f8fafc!important;color:#0f172a!important}
+.light .glass{background:rgba(255,255,255,0.8)!important;border-color:rgba(0,0,0,0.1)!important}
+.light .glass-card{background:rgba(255,255,255,0.7)!important;border-color:rgba(0,0,0,0.15)!important}
+.light .text-white{color:#0f172a!important}
+.light .text-brand-300\/60,.light .text-brand-300\/50{color:#475569!important}
+.light .btn-primary{background:linear-gradient(135deg,#2563eb,#1d4ed8)!important}
+#bg-canvas{position:fixed;top:0;left:0;z-index:0;pointer-events:none}
+.glass{background:rgba(10,18,30,0.8);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);border:1px solid rgba(59,130,246,0.12);border-radius:1rem}
+.glass-card{background:rgba(10,18,30,0.7);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid rgba(59,130,246,0.18);border-radius:1rem;transition:all 0.3s cubic-bezier(0.4,0,0.2,1)}
+.glass-card:hover{transform:translateY(-3px);box-shadow:0 24px 48px rgba(59,130,246,0.12);border-color:rgba(59,130,246,0.35)}
+.glass-card.clickable{cursor:pointer}
+.nav-btn{position:relative;padding:0.75rem 1.25rem;border-radius:0.75rem;transition:all 0.2s;cursor:pointer;font-weight:500;font-size:0.875rem;display:flex;align-items:center;gap:0.75rem;color:#94a3b8;border:none;background:transparent;width:100%;text-align:left}
+.nav-btn:hover{background:rgba(59,130,246,0.08);color:#e2e8f0}
+.nav-btn.active{background:rgba(59,130,246,0.18);color:#60a5fa;font-weight:600}
+.nav-btn.active::before{content:'';position:absolute;left:0;top:25%;height:50%;width:3px;background:#3b82f6;border-radius:0 3px 3px 0}
+.page-section{display:none}
+.page-section.active{display:block;animation:slideUp 0.4s cubic-bezier(0.4,0,0.2,1)}
+@keyframes slideUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
+@keyframes shimmer{0%{background-position:-200% 0}100%{background-position:200% 0}}
+.skeleton{background:linear-gradient(90deg,rgba(59,130,246,0.05) 25%,rgba(59,130,246,0.15) 50%,rgba(59,130,246,0.05) 75%);background-size:200% 100%;animation:shimmer 1.5s infinite;border-radius:0.5rem}
+.ripple{position:relative;overflow:hidden}.ripple::after{content:'';position:absolute;top:50%;left:50%;width:0;height:0;border-radius:50%;background:rgba(255,255,255,0.3);transform:translate(-50%,-50%);transition:width 0.6s,height 0.6s,opacity 0.6s}
+.ripple:active::after{width:300px;height:300px;opacity:0}
+.progress-bar{height:6px;border-radius:999px;background:rgba(255,255,255,0.06);overflow:hidden}
+.progress-fill{height:100%;border-radius:999px;background:linear-gradient(90deg,#3b82f6,#60a5fa,#38bdf8);transition:width 1.2s cubic-bezier(0.4,0,0.2,1)}
+.sidebar{transition:transform 0.4s cubic-bezier(0.4,0,0.2,1);z-index:40}
+@media(max-width:768px){.sidebar{position:fixed;left:0;top:0;height:100vh;transform:translateX(-100%)}.sidebar.open{transform:translateX(0)}.menu-btn{display:flex!important}}
+.menu-btn{display:none;position:fixed;top:1rem;left:1rem;z-index:60}
+.user-dropdown{position:absolute;bottom:100%;left:0;right:0;margin-bottom:0.5rem;display:none;z-index:70;animation:fadeScale 0.15s ease}
+.user-dropdown.open{display:block}
+@keyframes fadeScale{from{opacity:0;transform:scale(0.95)}to{opacity:1;transform:scale(1)}}
+.modal-overlay{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.75);z-index:100;display:none;align-items:center;justify-content:center;padding:1rem}
+.modal-overlay.open{display:flex}
+.modal-box{background:#0f1a2e;border:1px solid rgba(59,130,246,0.25);border-radius:1.25rem;padding:2rem;max-width:700px;width:100%;max-height:85vh;overflow-y:auto;animation:fadeScale 0.2s ease}
+.modal-box h2{font-size:1.5rem;font-weight:700;color:#fff;margin-bottom:1.5rem}
+.modal-box input,.modal-box select{width:100%;padding:0.75rem 1rem;border-radius:0.75rem;background:#0a1220;border:1px solid rgba(59,130,246,0.2);color:#e2e8f0;margin-top:0.5rem;margin-bottom:1rem;font-size:0.9rem;outline:none}
+.modal-box input:focus,.modal-box select:focus{border-color:#3b82f6}
+.modal-box label{color:#93c5fd;font-size:0.85rem;font-weight:500}
+.btn{padding:0.75rem 1.5rem;border-radius:0.75rem;font-weight:600;cursor:pointer;transition:all 0.2s;font-size:0.9rem;border:none;position:relative;overflow:hidden}
+.btn-primary{background:linear-gradient(135deg,#3b82f6,#2563eb);color:#fff}.btn-primary:hover{box-shadow:0 8px 24px rgba(59,130,246,0.35)}
+.btn-secondary{background:rgba(59,130,246,0.1);color:#93c5fd;border:1px solid rgba(59,130,246,0.2)}.btn-secondary:hover{background:rgba(59,130,246,0.2)}
+.badge{padding:0.25rem 0.75rem;border-radius:999px;font-size:0.75rem;font-weight:600}
+.badge-success{background:rgba(52,211,153,0.15);color:#6ee7b7}
+.badge-warning{background:rgba(251,191,36,0.15);color:#fcd34d}
+.badge-danger{background:rgba(248,113,113,0.15);color:#fca5a5}
+.badge-info{background:rgba(59,130,246,0.15);color:#93c5fd}
+.detail-row{cursor:pointer;transition:background 0.15s}
+.detail-row:hover{background:rgba(59,130,246,0.06)}
+::-webkit-scrollbar{width:6px}::-webkit-scrollbar-track{background:#060b14}::-webkit-scrollbar-thumb{background:rgba(59,130,246,0.4);border-radius:3px}
+.toast{position:fixed;top:1.5rem;right:1.5rem;z-index:200;padding:1rem 1.5rem;font-weight:500;font-size:0.9rem;transform:translateX(120%);transition:transform 0.35s cubic-bezier(0.4,0,0.2,1);max-width:400px}
+.toast.show{transform:translateX(0)}
+.tooltip{position:relative}.tooltip::after{content:attr(data-tooltip);position:absolute;bottom:100%;left:50%;transform:translateX(-50%);background:#1e293b;color:#fff;padding:0.25rem 0.75rem;border-radius:0.5rem;font-size:0.75rem;white-space:nowrap;opacity:0;transition:opacity 0.2s;pointer-events:none}
+.tooltip:hover::after{opacity:1}
+@keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-5px)}75%{transform:translateX(5px)}}
+.shake{animation:shake 0.3s ease-in-out}
+.offline-banner{position:fixed;top:0;left:0;right:0;background:#dc2626;color:#fff;text-align:center;padding:0.5rem;z-index:300;transform:translateY(-100%);transition:transform 0.3s ease}
+.offline-banner.show{transform:translateY(0)}
+.counter{transition:all 0.6s ease;font-variant-numeric:tabular-nums}
+.reveal{opacity:0;transform:translateY(20px);transition:opacity 0.6s ease,transform 0.6s ease}
+.reveal.visible{opacity:1;transform:translateY(0)}
+.password-strength{height:4px;border-radius:2px;margin-top:0.25rem;transition:width 0.3s ease}
+</style>
+</head>
+<body>
+<canvas id="bg-canvas"></canvas>
+<div id="toast" class="toast glass-card"></div>
+<div class="offline-banner" id="offline-banner">You are offline. Some features may not work.</div>
+
+<div id="auth-page" class="min-h-screen flex items-center justify-center relative z-10 px-4">
+  <div class="glass-card p-8 max-w-md w-full">
+    <h2 id="auth-title" class="text-3xl font-bold text-white mb-6 text-center">Sign In</h2>
+    <form id="auth-form">
+      <div id="name-field" class="hidden">
+        <label class="text-brand-300 text-sm">Full Name</label>
+        <input type="text" id="auth-name" class="w-full p-3 rounded-lg bg-[#0a1220] border border-brand-500/20 text-white mt-1 mb-3" placeholder="John Doe">
+      </div>
+      <label class="text-brand-300 text-sm">Email</label>
+      <input type="email" id="auth-email" class="w-full p-3 rounded-lg bg-[#0a1220] border border-brand-500/20 text-white mt-1 mb-3" placeholder="admin@crosselliq.com" required>
+      <label class="text-brand-300 text-sm">Password</label>
+      <input type="password" id="auth-password" class="w-full p-3 rounded-lg bg-[#0a1220] border border-brand-500/20 text-white mt-1 mb-1" placeholder="••••••••" required>
+      <div class="password-strength" id="password-strength"></div>
+      <div id="auth-error" class="text-red-400 text-sm mt-3 hidden"></div>
+      <button type="submit" id="auth-submit" class="w-full btn-primary py-3 rounded-lg font-semibold mt-4 ripple">Sign In</button>
+    </form>
+    <p class="text-center text-sm text-brand-300/50 mt-4">
+      <span id="auth-toggle-text">Don't have an account?</span>
+      <button id="auth-toggle-btn" class="text-brand-400 hover:underline ml-1 font-medium">Sign Up</button>
+    </p>
+  </div>
+</div>
+
+<div id="app-page" class="hidden">
+  <button class="menu-btn glass p-3 rounded-xl" onclick="toggleSidebar()">
+    <svg width="24" height="24" fill="none" stroke="#60a5fa" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+  </button>
+
+  <div class="modal-overlay" id="profile-modal"><div class="modal-box">
+    <h2>My Profile</h2>
+    <label class="text-brand-300 text-sm">Full Name</label><input type="text" id="profile-name" class="w-full p-3 rounded-lg bg-[#0a1220] border border-brand-500/20 text-white mt-1 mb-3">
+    <label class="text-brand-300 text-sm">Email</label><input type="email" id="profile-email" class="w-full p-3 rounded-lg bg-[#0a1220] border border-brand-500/20 text-white mt-1 mb-3">
+    <div class="flex gap-3 mt-4"><button class="btn btn-primary flex-1 ripple" onclick="saveProfile()">Save</button><button class="btn btn-secondary flex-1" onclick="closeModal('profile-modal')">Cancel</button></div>
+  </div></div>
+
+  <div class="modal-overlay" id="settings-modal"><div class="modal-box">
+    <h2>Settings</h2>
+    <label class="text-brand-300 text-sm">Threshold</label><select class="w-full p-3 rounded-lg bg-[#0a1220] border border-brand-500/20 text-white mt-1 mb-3"><option>0.7</option><option>0.5</option></select>
+    <label class="text-brand-300 text-sm">Theme</label>
+    <button id="theme-toggle" class="btn btn-secondary w-full" onclick="toggleTheme()">Switch to Light Mode</button>
+    <div class="flex gap-3 mt-4"><button class="btn btn-primary flex-1 ripple" onclick="closeModal('settings-modal');showToast('Saved','success')">Save</button><button class="btn btn-secondary flex-1" onclick="closeModal('settings-modal')">Cancel</button></div>
+  </div></div>
+
+  <div class="modal-overlay" id="team-modal"><div class="modal-box" style="max-width:800px">
+    <h2>Team</h2>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+      <div class="glass p-4"><p class="font-semibold text-white">Anika Sharma</p><span class="badge badge-success">Active</span></div>
+      <div class="glass p-4"><p class="font-semibold text-white">Rajesh Kumar</p><span class="badge badge-success">Active</span></div>
+    </div>
+    <button class="btn btn-secondary w-full" onclick="closeModal('team-modal')">Close</button>
+  </div></div>
+
+  <div class="modal-overlay" id="customer-modal"><div class="modal-box">
+    <h2 id="cust-title">Customer</h2>
+    <div class="grid grid-cols-3 gap-3 mb-4">
+      <div class="glass p-3 text-center"><p class="text-xs text-brand-300/50">Propensity</p><p class="text-2xl font-bold text-white" id="cust-score">--</p><div class="progress-bar mt-1"><div class="progress-fill" id="cust-bar" style="width:0%"></div></div></div>
+      <div class="glass p-3 text-center"><p class="text-xs text-brand-300/50">Segment</p><p class="text-lg font-bold text-white" id="cust-seg">--</p></div>
+      <div class="glass p-3 text-center"><p class="text-xs text-brand-300/50">Channel</p><p class="text-lg font-bold text-white" id="cust-channel">--</p></div>
+    </div>
+    <div class="glass p-3 mb-4"><p class="text-sm font-semibold text-brand-300">AI Reasoning</p><p class="text-sm text-brand-300/70" id="cust-reason">--</p></div>
+    <div class="flex gap-3"><button class="btn btn-primary flex-1 ripple" onclick="showToast('Action logged','success');closeModal('customer-modal')">Take Action</button><button class="btn btn-secondary flex-1" onclick="closeModal('customer-modal')">Close</button></div>
+  </div></div>
+
+  <div class="flex min-h-screen relative z-10">
+    <aside id="sidebar" class="sidebar w-72 min-h-screen glass border-r border-brand-500/8 flex flex-col p-4 shrink-0">
+      <div class="px-4 py-6 mb-6">
+        <div class="flex items-center gap-3">
+          <div class="w-11 h-11 rounded-xl bg-gradient-to-br from-brand-500 to-brand-600 flex items-center justify-center text-white font-bold text-lg shadow-lg">IQ</div>
+          <div><h2 class="font-bold text-lg text-white">CrossSell IQ</h2><p class="text-xs text-brand-300/60">Revenue Intelligence</p></div>
+        </div>
+      </div>
+      <nav class="flex flex-col gap-1 flex-1">
+        <button class="nav-btn active" onclick="showPage('dashboard', this)" data-tooltip="Dashboard (Ctrl+D)"><svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg> Dashboard</button>
+        <button class="nav-btn" onclick="showPage('agents', this)" data-tooltip="Agent Workspace (Ctrl+A)"><svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="7" r="3"/><path d="M3 21v-2a4 4 0 014-4h4a4 4 0 014 4v2"/><circle cx="17" cy="7" r="3"/><path d="M21 21v-2a4 4 0 00-3-3.87"/></svg> Agent Workspace</button>
+        <button class="nav-btn" onclick="showPage('insights', this)" data-tooltip="Model Insights (Ctrl+I)"><svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg> Model Insights</button>
+      </nav>
+      <div class="relative">
+        <div class="user-dropdown glass p-2" id="user-dropdown">
+          <button onclick="openModal('profile-modal')" class="w-full text-left px-3 py-2.5 rounded-lg text-sm text-white hover:bg-brand-500/15">My Profile</button>
+          <button onclick="openModal('settings-modal')" class="w-full text-left px-3 py-2.5 rounded-lg text-sm text-white hover:bg-brand-500/15">Settings</button>
+          <button onclick="openModal('team-modal')" class="w-full text-left px-3 py-2.5 rounded-lg text-sm text-white hover:bg-brand-500/15">Team</button>
+          <hr class="border-brand-500/10 my-1">
+          <button onclick="handleLogout()" class="w-full text-left px-3 py-2.5 rounded-lg text-sm text-red-400 hover:bg-red-500/10">Sign Out</button>
+        </div>
+        <button onclick="toggleUserDropdown()" class="glass-card p-4 w-full flex items-center gap-3 cursor-pointer hover:border-brand-500/40">
+          <div class="w-9 h-9 rounded-full bg-gradient-to-br from-brand-500 to-brand-600 flex items-center justify-center text-white font-semibold text-sm" id="user-avatar">AK</div>
+          <div class="text-left"><p class="text-sm font-medium text-white" id="user-name-display">Admin Kumar</p><p class="text-xs text-brand-300/50" id="user-role-display">Platform Admin</p></div>
+          <svg class="ml-auto" width="16" height="16" fill="none" stroke="#94a3b8" stroke-width="2"><path d="M6 9l3 3 3-3"/></svg>
+        </button>
+      </div>
+    </aside>
+
+    <main class="flex-1 p-4 md:p-8 overflow-x-hidden">
+      <div class="page-section active" id="page-dashboard">
+        <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4 reveal">
+          <div><h1 class="text-2xl md:text-4xl font-bold text-white">Revenue Dashboard</h1><p class="text-brand-300/60">Real-time cross-sell intelligence</p></div>
+          <div class="flex gap-3"><div class="glass px-4 py-2 rounded-xl text-center"><p class="text-xs text-brand-300/60">Model</p><p class="text-emerald-400 font-semibold text-sm">Active</p></div><div class="glass px-4 py-2 rounded-xl text-center"><p class="text-xs text-brand-300/60">Updated</p><p class="text-white font-semibold text-sm" id="last-updated">Just now</p></div></div>
+        </div>
+        <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 mb-8" id="kpi-cards"></div>
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6 mb-8 reveal">
+          <div class="glass-card p-5 md:p-6"><h3 class="text-lg font-semibold text-white mb-4">Revenue Trend</h3><div style="height:280px"><canvas id="revenueChart"></canvas></div></div>
+          <div class="glass-card p-5 md:p-6"><h3 class="text-lg font-semibold text-white mb-4">Customer Segments</h3><div style="height:280px"><canvas id="segmentChart"></canvas></div></div>
+        </div>
+        <div class="glass-card p-5 md:p-6 reveal">
+          <div class="flex justify-between items-center mb-4">
+            <h3 class="text-lg font-semibold text-white">Recent Predictions</h3>
+            <input type="text" id="table-search" class="bg-[#0a1220] border border-brand-500/20 text-white rounded-lg px-3 py-1 text-sm" placeholder="Search..." oninput="filterTable()">
+          </div>
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm" id="predictions-table">
+              <thead><tr class="text-brand-300/40 text-xs uppercase"><th class="text-left p-3 cursor-pointer" onclick="sortTable(0)">Customer</th><th class="text-left p-3 cursor-pointer" onclick="sortTable(1)">Segment</th><th class="text-left p-3 cursor-pointer" onclick="sortTable(2)">Score</th><th class="text-left p-3 cursor-pointer" onclick="sortTable(3)">Product</th><th class="text-left p-3 cursor-pointer" onclick="sortTable(4)">Status</th></tr></thead>
+              <tbody id="recent-table"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      <div class="page-section" id="page-agents">
+        <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4 reveal"><div><h1 class="text-2xl md:text-4xl font-bold text-white">Agent Workspace</h1><p class="text-brand-300/60">Prioritized queue</p></div><div class="flex gap-3"><div class="glass px-4 py-2 rounded-xl"><p class="text-xs text-brand-300/60">Activation</p><p class="text-emerald-400 font-bold text-lg">87%</p></div><div class="glass px-4 py-2 rounded-xl"><p class="text-xs text-brand-300/60">Conversions</p><p class="text-white font-bold text-lg">14</p></div></div></div>
+        <div class="glass-card p-5 md:p-6 reveal"><h3 class="text-lg font-semibold text-white mb-4">Priority Queue</h3><div class="space-y-3" id="agent-queue"></div></div>
+      </div>
+      <div class="page-section" id="page-insights">
+        <div class="mb-8 reveal"><h1 class="text-2xl md:text-4xl font-bold text-white">Model Insights</h1></div>
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6 reveal"><div class="glass-card p-5 md:p-6"><h3 class="text-lg font-semibold text-white mb-4">Feature Importance</h3><div style="height:300px"><canvas id="featureChart"></canvas></div></div><div class="glass-card p-5 md:p-6"><h3 class="text-lg font-semibold text-white mb-4">Segments</h3><div class="space-y-3" id="segment-profiles"></div></div></div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<script>
+const API = 'http://127.0.0.1:8000/api/v1';
+let authToken = localStorage.getItem('access_token') || '';
+let currentUser = JSON.parse(localStorage.getItem('user') || 'null');
+let lastGoodKpis = null;
+
+// ========== THEME ==========
+if (localStorage.getItem('theme') === 'light') document.documentElement.classList.add('light');
+function toggleTheme() {
+  document.documentElement.classList.toggle('light');
+  localStorage.setItem('theme', document.documentElement.classList.contains('light') ? 'light' : 'dark');
+  document.getElementById('theme-toggle').textContent = document.documentElement.classList.contains('light') ? 'Switch to Dark Mode' : 'Switch to Light Mode';
+}
+
+// ========== PASSWORD STRENGTH ==========
+document.getElementById('auth-password').addEventListener('input', function() {
+  const val = this.value;
+  let strength = 0;
+  if (val.length >= 8) strength++;
+  if (/[A-Z]/.test(val)) strength++;
+  if (/[0-9]/.test(val)) strength++;
+  const bar = document.getElementById('password-strength');
+  const colors = ['#dc2626','#f59e0b','#84cc16','#22c55e'];
+  bar.style.width = (strength * 25) + '%';
+  bar.style.background = colors[strength] || colors[0];
+});
+
+// ========== OFFLINE DETECTION ==========
+window.addEventListener('online', () => document.getElementById('offline-banner').classList.remove('show'));
+window.addEventListener('offline', () => document.getElementById('offline-banner').classList.add('show'));
+
+// ========== KEYBOARD SHORTCUTS ==========
+document.addEventListener('keydown', e => {
+  if (e.ctrlKey && e.key === 'd') { e.preventDefault(); document.querySelector('.nav-btn:nth-child(1)').click(); }
+  if (e.ctrlKey && e.key === 'a') { e.preventDefault(); document.querySelector('.nav-btn:nth-child(2)').click(); }
+  if (e.ctrlKey && e.key === 'i') { e.preventDefault(); document.querySelector('.nav-btn:nth-child(3)').click(); }
+});
+
+// ========== TABLE SORT & FILTER ==========
+let sortDirection = {};
+function sortTable(colIndex) {
+  const table = document.getElementById('predictions-table');
+  const tbody = table.querySelector('tbody');
+  const rows = Array.from(tbody.querySelectorAll('tr'));
+  const dir = sortDirection[colIndex] = !sortDirection[colIndex];
+  rows.sort((a, b) => {
+    const aVal = a.cells[colIndex].textContent.trim();
+    const bVal = b.cells[colIndex].textContent.trim();
+    const aNum = parseFloat(aVal.replace('%',''));
+    const bNum = parseFloat(bVal.replace('%',''));
+    if (!isNaN(aNum) && !isNaN(bNum)) return dir ? aNum - bNum : bNum - aNum;
+    return dir ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
+  });
+  rows.forEach(row => tbody.appendChild(row));
+}
+function filterTable() {
+  const query = document.getElementById('table-search')?.value.toLowerCase() || '';
+  document.querySelectorAll('#recent-table tr').forEach(row => {
+    row.style.display = row.textContent.toLowerCase().includes(query) ? '' : 'none';
+  });
+}
+
+// ========== AUTH (same as before) ==========
+let authMode = 'login';
+function toggleAuthMode() {
+  authMode = authMode === 'login' ? 'register' : 'login';
+  document.getElementById('auth-title').textContent = authMode === 'login' ? 'Sign In' : 'Create Account';
+  document.getElementById('auth-submit').textContent = authMode === 'login' ? 'Sign In' : 'Sign Up';
+  document.getElementById('name-field').classList.toggle('hidden', authMode === 'login');
+  document.getElementById('auth-toggle-text').textContent = authMode === 'login' ? "Don't have an account?" : 'Already have an account?';
+  document.getElementById('auth-toggle-btn').textContent = authMode === 'login' ? 'Sign Up' : 'Sign In';
+  document.getElementById('auth-error').classList.add('hidden');
+}
+document.getElementById('auth-toggle-btn').addEventListener('click', toggleAuthMode);
+document.getElementById('auth-form').addEventListener('submit', async function(e) {
+  e.preventDefault();
+  const email = document.getElementById('auth-email').value;
+  const password = document.getElementById('auth-password').value;
+  const name = document.getElementById('auth-name')?.value || '';
+  const errorDiv = document.getElementById('auth-error');
+  try {
+    let response;
+    if (authMode === 'login') {
+      response = await fetch(API + '/auth/login', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({email,password}) });
+    } else {
+      response = await fetch(API + '/auth/register', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({name,email,password,role:'agent'}) });
+    }
+    if (!response.ok) { const err = await response.json(); throw new Error(err.detail || 'Auth failed'); }
+    const data = await response.json();
+    authToken = data.access_token;
+    localStorage.setItem('access_token', authToken);
+    currentUser = { name:data.name, email, role:data.role };
+    localStorage.setItem('user', JSON.stringify(currentUser));
+    document.getElementById('auth-page').classList.add('hidden');
+    document.getElementById('app-page').classList.remove('hidden');
+    updateSidebarUser();
+    fetchDashboard();
+    showToast('Welcome, ' + currentUser.name, 'success');
+  } catch (err) {
+    errorDiv.textContent = err.message;
+    errorDiv.classList.remove('hidden');
+    document.getElementById('auth-form').classList.add('shake');
+    setTimeout(() => document.getElementById('auth-form').classList.remove('shake'), 300);
+  }
+});
+function updateSidebarUser() {
+  if (!currentUser) return;
+  document.getElementById('user-name-display').textContent = currentUser.name;
+  document.getElementById('user-avatar').textContent = currentUser.name.split(' ').map(w=>w[0]).join('').substring(0,2).toUpperCase();
+  document.getElementById('user-role-display').textContent = currentUser.role === 'admin' ? 'Admin' : 'Agent';
+  document.getElementById('profile-name').value = currentUser.name;
+  document.getElementById('profile-email').value = currentUser.email || '';
+}
+if (authToken && currentUser) {
+  document.getElementById('auth-page').classList.add('hidden');
+  document.getElementById('app-page').classList.remove('hidden');
+  updateSidebarUser();
+  fetchDashboard();
+}
+function handleLogout() {
+  localStorage.removeItem('access_token');
+  localStorage.removeItem('user');
+  authToken = ''; currentUser = null;
+  document.getElementById('auth-page').classList.remove('hidden');
+  document.getElementById('app-page').classList.add('hidden');
+  document.getElementById('user-dropdown').classList.remove('open');
+  showToast('Signed out', 'error');
+}
+
+// ========== 3D PARTICLES WITH MOUSE INTERACTION ==========
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(75, innerWidth/innerHeight, 0.1, 1000);
+camera.position.z = 5;
+const renderer = new THREE.WebGLRenderer({ canvas:document.getElementById('bg-canvas'), alpha:true });
+renderer.setSize(innerWidth, innerHeight);
+const count = 500;
+const geo = new THREE.BufferGeometry();
+const pos = new Float32Array(count * 3);
+const spd = new Float32Array(count);
+for (let i = 0; i < count * 3; i += 3) {
+  pos[i] = (Math.random() - 0.5) * 12;
+  pos[i+1] = (Math.random() - 0.5) * 12;
+  pos[i+2] = (Math.random() - 0.5) * 8;
+  spd[i/3] = 0.002 + Math.random() * 0.005;
+}
+geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+const mat = new THREE.PointsMaterial({ size:0.025, color:0x3b82f6, blending:THREE.AdditiveBlending, depthWrite:false, transparent:true, opacity:0.5 });
+const pts = new THREE.Points(geo, mat);
+scene.add(pts);
+let mouseX = 0, mouseY = 0;
+document.addEventListener('mousemove', e => { mouseX = (e.clientX / innerWidth) * 2 - 1; mouseY = -(e.clientY / innerHeight) * 2 + 1; });
+function animateParticles() {
+  requestAnimationFrame(animateParticles);
+  const p = geo.attributes.position.array;
+  for (let i = 0; i < count * 3; i += 3) {
+    p[i+1] += spd[i/3];
+    if (p[i+1] > 6) p[i+1] = -6;
+  }
+  geo.attributes.position.needsUpdate = true;
+  pts.rotation.y += 0.0002 + mouseX * 0.0005;
+  pts.rotation.x += mouseY * 0.0003;
+  renderer.render(scene, camera);
+}
+animateParticles();
+window.addEventListener('resize', () => { camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); });
+
+// ========== SCROLL REVEAL ==========
+const observer = new IntersectionObserver(entries => entries.forEach(e => { if (e.isIntersecting) e.target.classList.add('visible'); }), { threshold:0.1 });
+document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
+
+// ========== HELPERS ==========
+function showToast(m, t) {
+  const el = document.getElementById('toast');
+  el.textContent = m;
+  el.className = 'toast glass-card show';
+  el.style.borderColor = t === 'success' ? 'rgba(52,211,153,0.4)' : t === 'error' ? 'rgba(248,113,113,0.4)' : 'rgba(59,130,246,0.3)';
+  setTimeout(() => el.classList.remove('show'), 2800);
+}
+function toggleSidebar() { document.getElementById('sidebar').classList.toggle('open'); }
+function toggleUserDropdown() { document.getElementById('user-dropdown').classList.toggle('open'); }
+document.addEventListener('click', e => { const dd = document.getElementById('user-dropdown'); if (!e.target.closest('.glass-card') && dd.classList.contains('open')) dd.classList.remove('open'); });
+function openModal(id) { document.getElementById('user-dropdown').classList.remove('open'); document.getElementById(id).classList.add('open'); }
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+document.querySelectorAll('.modal-overlay').forEach(m => m.addEventListener('click', e => { if (e.target === m) m.classList.remove('open'); }));
+function saveProfile() {
+  const n = document.getElementById('profile-name').value;
+  if (!n) return;
+  currentUser.name = n;
+  localStorage.setItem('user', JSON.stringify(currentUser));
+  updateSidebarUser();
+  closeModal('profile-modal');
+  showToast('Profile updated', 'success');
+}
+function showPage(n, b) {
+  document.querySelectorAll('.page-section').forEach(p => p.classList.remove('active'));
+  document.getElementById('page-' + n).classList.add('active');
+  document.querySelectorAll('.nav-btn').forEach(x => x.classList.remove('active'));
+  b.classList.add('active');
+  if (window.innerWidth < 768) document.getElementById('sidebar').classList.remove('open');
+  if (n === 'dashboard') fetchDashboard();
+  if (n === 'agents') fetchAgentQueue();
+  if (n === 'insights') { initFeatureChart(); initSegments(); }
+}
+function openCustModal(n, s, seg, ch, r) {
+  document.getElementById('cust-title').textContent = n;
+  document.getElementById('cust-score').textContent = s + '%';
+  document.getElementById('cust-bar').style.width = s + '%';
+  document.getElementById('cust-seg').textContent = seg;
+  document.getElementById('cust-channel').textContent = ch || 'Phone';
+  document.getElementById('cust-reason').textContent = r;
+  openModal('customer-modal');
+}
+
+// ========== API FETCHING (unchanged logic) ==========
+async function authFetch(url) {
+  const headers = { 'Content-Type': 'application/json' };
+  if (authToken) headers['Authorization'] = 'Bearer ' + authToken;
+  return fetch(url, { headers });
+}
+async function fetchDashboard() {
+  try {
+    const r = await authFetch(API + '/dashboard/summary');
+    const d = await r.json();
+    const html =
+      '<div class="glass-card p-5 clickable" onclick="openCustModal(\'Customers\',\'100\',\'All\',\'N/A\',\'Total: '+d.total_customers.toLocaleString()+'\')"><p class="text-brand-300/60 text-xs uppercase">Total Customers</p><p class="text-3xl font-bold text-white mt-2 counter">'+d.total_customers.toLocaleString()+'</p></div>'+
+      '<div class="glass-card p-5"><p class="text-brand-300/60 text-xs uppercase">Avg Propensity</p><p class="text-3xl font-bold text-white mt-2 counter">'+d.avg_propensity_score+'%</p><div class="progress-bar mt-2"><div class="progress-fill" style="width:'+d.avg_propensity_score+'%"></div></div></div>'+
+      '<div class="glass-card p-5"><p class="text-brand-300/60 text-xs uppercase">Active Agents</p><p class="text-3xl font-bold text-white mt-2 counter">'+d.active_agents+'</p></div>'+
+      '<div class="glass-card p-5"><p class="text-brand-300/60 text-xs uppercase">Predictions</p><p class="text-3xl font-bold text-white mt-2 counter">'+d.predictions_today.toLocaleString()+'</p></div>';
+    document.getElementById('kpi-cards').innerHTML = html;
+    lastGoodKpis = { html };
+    initRevenueChart();
+    initSegmentChart(Object.values(d.segment_distribution||{}), Object.keys(d.segment_distribution||{}));
+    fetchRecentPredictions();
+  } catch(e) {
+    if (lastGoodKpis) document.getElementById('kpi-cards').innerHTML = lastGoodKpis.html;
+  }
+}
+async function fetchRecentPredictions() {
+  try {
+    const r = await authFetch(API + '/predictions/recent?limit=10');
+    const d = await r.json();
+    let rows = '';
+    d.forEach(c => {
+      rows += '<tr class="detail-row" onclick="openCustModal(\''+c.name+'\',\''+c.propensity_score+'\',\''+c.segment+'\',\''+(c.channel||'Phone')+'\',\''+(c.reasoning||'')+'\')"><td class="p-3 font-medium text-white">'+c.name+'</td><td class="p-3"><span class="badge badge-info">'+c.segment+'</span></td><td class="p-3"><div class="flex items-center gap-2"><div class="w-14 progress-bar"><div class="progress-fill" style="width:'+c.propensity_score+'%"></div></div><span class="text-xs">'+c.propensity_score+'%</span></div></td><td class="p-3 text-xs text-brand-300/70">'+c.recommended_product+'</td><td class="p-3"><span class="badge '+(c.status==='Converted'?'badge-success':'badge-warning')+'">'+c.status+'</span></td></tr>';
+    });
+    document.getElementById('recent-table').innerHTML = rows || '<tr><td colspan="5" class="p-3 text-center text-brand-300/50">No predictions yet</td></tr>';
+  } catch(e) {}
+}
+async function fetchAgentQueue() {
+  try {
+    const r = await authFetch(API + '/agent/queue?limit=8');
+    const d = await r.json();
+    const q = d.queue || [];
+    let html = '';
+    q.forEach((c,i) => {
+      html += '<div class="glass p-4 rounded-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 clickable" onclick="openCustModal(\''+c.name+'\',\''+c.propensity_score+'\',\'N/A\',\''+c.channel+'\',\''+c.reasoning+'\')"><div class="flex items-center gap-4"><span class="text-2xl font-bold text-brand-400/15 w-6">'+(i+1)+'</span><div><p class="font-medium text-white">'+c.name+'</p><p class="text-xs text-brand-300/50">'+c.reasoning+'</p></div></div><div class="flex items-center gap-4"><div><p class="text-lg font-bold text-white">'+c.propensity_score+'%</p><div class="progress-bar w-16"><div class="progress-fill" style="width:'+c.propensity_score+'%"></div></div></div><span class="badge '+(c.urgency==='Now'?'badge-danger':'badge-warning')+'">'+c.urgency+'</span></div></div>';
+    });
+    document.getElementById('agent-queue').innerHTML = html || '<p class="text-brand-300/50 text-center py-8">No opportunities</p>';
+  } catch(e) {}
+}
+
+// Charts (same as before)
+let rc = null;
+function initRevenueChart() {
+  const ctx = document.getElementById('revenueChart'); if (!ctx) return;
+  if (rc) rc.destroy();
+  rc = new Chart(ctx, { type:'line', data:{ labels:['W1','W2','W3','W4','W5','W6','W7','W8','W9','W10','W11','W12'], datasets:[{ label:'Baseline', data:[42,44,47,50,52,55,57,60,63,66,68,70], borderColor:'#f43f5e', tension:0.4, pointRadius:0, borderWidth:2 },{ label:'CrossSell IQ', data:[48,53,59,64,72,78,84,91,97,104,112,120], borderColor:'#3b82f6', backgroundColor:'rgba(59,130,246,0.1)', tension:0.4, pointRadius:0, borderWidth:2.5, fill:true }] }, options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{ labels:{ color:'#94a3b8', usePointStyle:true, padding:20 } } }, scales:{ x:{ grid:{ color:'rgba(255,255,255,0.04)' }, ticks:{ color:'#64748b' } }, y:{ grid:{ color:'rgba(255,255,255,0.04)' }, ticks:{ color:'#64748b', callback:v=>'Rs.'+v+'L' } } } } });
+}
+function initSegmentChart(data, labels) {
+  const ctx = document.getElementById('segmentChart'); if (!ctx) return;
+  new Chart(ctx, { type:'doughnut', data:{ labels:labels.length?labels:['Loyalist','Dormant','Price-Sens','Life-Stage'], datasets:[{ data:data.length?data:[35,25,20,20], backgroundColor:['#3b82f6','#60a5fa','#f43f5e','#38bdf8'], borderColor:'#0a0f1e', borderWidth:2 }] }, options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{ labels:{ color:'#94a3b8', padding:15 } } } } });
+}
+function initFeatureChart() {
+  const ctx = document.getElementById('featureChart'); if (!ctx) return;
+  new Chart(ctx, { type:'bar', data:{ labels:['renewal_30d','recency','monetary','engagement','tenure','claim_60d','num_products','service_days','owns_B','lost_q'], datasets:[{ data:[28,22,18,15,12,10,8,6,5,4], backgroundColor:'#3b82f6', borderRadius:6 }] }, options:{ indexAxis:'y', responsive:true, maintainAspectRatio:false, plugins:{ legend:{ display:false } }, scales:{ x:{ grid:{ color:'rgba(255,255,255,0.04)' }, ticks:{ color:'#64748b' } }, y:{ grid:{ display:false }, ticks:{ color:'#94a3b8' } } } } });
+}
+function initSegments() {
+  const c = document.getElementById('segment-profiles'); if (!c || c.children.length) return;
+  [{n:'High-Value Loyalist',p:35,cl:'#3b82f6',s:'Premium upsell',v:'Rs.25K avg'},{n:'Dormant Upsell',p:25,cl:'#60a5fa',s:'Re-engagement',v:'Rs.8K avg'},{n:'Price-Sensitive',p:20,cl:'#f43f5e',s:'Match bundles',v:'Rs.12K avg'},{n:'Life-Stage',p:20,cl:'#38bdf8',s:'Notifications',v:'Rs.15K avg'}].forEach(s => { c.innerHTML += '<div class="glass p-4 rounded-xl flex items-center justify-between clickable" onclick="openCustModal(\''+s.n+'\',\''+s.p+'\',\''+s.n+'\',\'N/A\',\''+s.s+'\')"><div class="flex items-center gap-3"><div class="w-3 h-3 rounded-full" style="background:'+s.cl+'"></div><div><p class="text-sm font-medium text-white">'+s.n+'</p><p class="text-xs text-brand-300/50">'+s.s+'</p></div></div><div class="text-right"><p class="text-sm font-semibold text-white">'+s.p+'%</p><p class="text-xs text-brand-300/50">'+s.v+'</p></div></div>'; });
+}
+if (currentUser) fetchDashboard();
+setInterval(() => { if (currentUser && document.getElementById('page-dashboard').classList.contains('active')) fetchDashboard(); }, 30000);
+</script>
+</body>
+</html>

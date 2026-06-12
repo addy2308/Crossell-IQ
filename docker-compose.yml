@@ -1,0 +1,103 @@
+version: '3.8'
+
+services:
+  # ========== Infrastructure ==========
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: crosssell
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backend/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ========== Microservices ==========
+  prediction-service:
+    build:
+      context: ./services/prediction_service
+      dockerfile: Dockerfile
+    ports:
+      - "50051:50051"   # gRPC
+      - "8001:8001"     # internal REST
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/crosssell
+      - REDIS_URL=redis://redis:6379/0
+      - MODEL_PATH=/app/models/xgb_model.pkl
+      - MLFLOW_ALLOW_FILE_STORE=true
+    volumes:
+      - ./models:/app/models
+      - ./data:/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  api-gateway:
+    build:
+      context: ./services/api_gateway
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - PREDICTION_SERVICE_URL=http://prediction-service:8001
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/crosssell
+      - REDIS_URL=redis://redis:6379/0
+      - SECRET_KEY=production-secret-change-this-in-real-deployment
+      - MLFLOW_ALLOW_FILE_STORE=true
+    volumes:
+      - ./backend/static:/app/static
+    depends_on:
+      prediction-service:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: ./services/worker
+      dockerfile: Dockerfile
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/crosssell
+      - REDIS_URL=redis://redis:6379/0
+      - MLFLOW_ALLOW_FILE_STORE=true
+    volumes:
+      - ./models:/app/models
+      - ./data:/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf
+    depends_on:
+      - api-gateway
+
+volumes:
+  postgres_data:

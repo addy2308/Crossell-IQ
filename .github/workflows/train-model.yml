@@ -1,0 +1,232 @@
+name: Train Netflix Model
+
+on:
+  schedule:
+    # Run daily at 2 AM UTC
+    - cron: '0 2 * * *'
+  
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Training mode'
+        required: true
+        default: 'quick'
+        type: choice
+        options:
+          - quick
+          - full
+
+jobs:
+  train-model:
+    name: Train Netflix Model
+    runs-on: ubuntu-latest
+    
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: netflix
+          POSTGRES_PASSWORD: netflix
+          POSTGRES_DB: netflix_ml
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+    
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+          cache: 'pip'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+          pip install kaggle xgboost scikit-learn pandas numpy
+      
+      - name: Configure Kaggle API
+        run: |
+          mkdir -p ~/.kaggle
+          echo "${{ secrets.KAGGLE_API_JSON }}" > ~/.kaggle/kaggle.json
+          chmod 600 ~/.kaggle/kaggle.json
+      
+      - name: Download dataset
+        run: |
+          cd ml_pipeline
+          python -c "
+          from netflix_integration import step_2_download_dataset
+          step_2_download_dataset()
+          "
+      
+      - name: Validate dataset
+        run: |
+          cd ml_pipeline
+          python -c "
+          from netflix_data_validation import run_all_checks
+          run_all_checks()
+          "
+      
+      - name: Engineer features
+        run: |
+          cd ml_pipeline
+          python -c "
+          from netflix_data_pipeline import build_training_features
+          build_training_features()
+          "
+      
+      - name: Train model
+        run: |
+          cd ml_pipeline
+          python -c "
+          from netflix_train_model import train_model
+          train_model()
+          "
+      
+      - name: Upload model artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: netflix-models
+          path: models/netflix_*
+          retention-days: 90
+      
+      - name: Upload features
+        uses: actions/upload-artifact@v3
+        with:
+          name: netflix-features
+          path: data/processed/netflix_features.parquet
+          retention-days: 30
+      
+      - name: Push to model registry
+        if: success()
+        run: |
+          echo "Pushing models to registry..."
+          # Configure your model registry credentials
+          # Push to MLflow, Hugging Face Model Hub, or custom registry
+      
+      - name: Notify Slack
+        if: success()
+        uses: 8398a7/action-slack@v3
+        with:
+          status: custom
+          custom_payload: |
+            {
+              text: '✅ Model training completed successfully!',
+              channel: '#ml-notifications',
+              attachments: [{
+                text: 'New Netflix Cross-Sell Model trained and ready for evaluation'
+              }]
+            }
+          webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+      
+      - name: Notify Slack on Failure
+        if: failure()
+        uses: 8398a7/action-slack@v3
+        with:
+          status: custom
+          custom_payload: |
+            {
+              text: '❌ Model training failed!',
+              channel: '#ml-notifications'
+            }
+          webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+
+  evaluate-model:
+    name: Evaluate Model
+    runs-on: ubuntu-latest
+    needs: train-model
+    
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+      
+      - name: Download model artifacts
+        uses: actions/download-artifact@v3
+        with:
+          name: netflix-models
+          path: models/
+      
+      - name: Run evaluation
+        run: |
+          pip install xgboost scikit-learn pandas numpy
+          cd ml_pipeline
+          python -c "
+          from netflix_train_model import _evaluate_model
+          _evaluate_model()
+          "
+      
+      - name: Compare with baseline
+        run: |
+          echo "Comparing model with baseline..."
+          # Implement model comparison logic
+      
+      - name: Generate report
+        run: |
+          echo "Generating evaluation report..."
+          # Generate evaluation report
+
+  deploy-model:
+    name: Deploy Model
+    runs-on: ubuntu-latest
+    needs: evaluate-model
+    if: success()
+    
+    environment:
+      name: production
+    
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+      
+      - name: Download model artifacts
+        uses: actions/download-artifact@v3
+        with:
+          name: netflix-models
+          path: models/
+      
+      - name: Deploy to staging
+        run: |
+          cd deployment
+          python deploy_model.py --env staging
+      
+      - name: Run integration tests
+        run: |
+          pip install pytest requests
+          pytest tests/test_api_load.py -v
+      
+      - name: Deploy to production
+        if: success()
+        run: |
+          cd deployment
+          python deploy_model.py --env production
+      
+      - name: Verify deployment
+        run: |
+          echo "Verifying production deployment..."
+          # Add verification steps
+      
+      - name: Notify deployment team
+        if: success()
+        uses: 8398a7/action-slack@v3
+        with:
+          status: custom
+          custom_payload: |
+            {
+              text: '🚀 New Netflix Model deployed to production!',
+              channel: '#deployments'
+            }
+          webhook_url: ${{ secrets.SLACK_WEBHOOK }}

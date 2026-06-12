@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+*.egg-info/
+dist/
+build/
+
+# Node / React
+node_modules/
+frontend_react/
+
+# Data files (too large for GitHub)
+*.csv
+*.txt
+*.db
+data/
+models/*.pkl
+mlruns/
+
+# IDE
+.vscode/
+.idea/
+
+# Environment
+.env
+*.log

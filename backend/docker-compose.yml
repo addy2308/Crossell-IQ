@@ -1,0 +1,7 @@
+
+  api-canary:
+    build: ./backend
+    ports:
+      - "8001:8000"
+    environment:
+      - MODEL_VERSION=challenger

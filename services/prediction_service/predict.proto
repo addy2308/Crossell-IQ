@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+service Predictor {
+  rpc Predict(PredictRequest) returns (PredictResponse);
+}
+
+message PredictRequest {
+  repeated float features = 1;
+}
+
+message PredictResponse {
+  float propensity = 1;
+  int32 segment = 2;
+  string segment_name = 3;
+  string product = 4;
+  string channel = 5;
+}

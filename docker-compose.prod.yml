@@ -1,0 +1,99 @@
+version: '3.8'
+
+services:
+  backend-netflix:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: cross-sell-backend
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/cross_sell
+      - REDIS_URL=redis://redis:6379/0
+      - LOG_LEVEL=INFO
+      - API_V1_PREFIX=/api/v1
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+      - redis
+    volumes:
+      - ./app:/app/app
+      - ./models:/app/models
+      - ./logs:/app/logs
+    networks:
+      - cross-sell-network
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  db:
+    image: postgres:15-alpine
+    container_name: cross-sell-db
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=cross_sell
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backend/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - cross-sell-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: cross-sell-redis
+    ports:
+      - "6379:6379"
+    networks:
+      - cross-sell-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  frontend:
+    build:
+      context: ./frontend_react
+      dockerfile: Dockerfile
+    container_name: cross-sell-frontend
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend-netflix
+    environment:
+      - REACT_APP_API_URL=http://localhost:8000/api
+    networks:
+      - cross-sell-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:latest
+    container_name: cross-sell-mlflow
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./mlruns:/mlruns
+    networks:
+      - cross-sell-network
+    command: mlflow server --host 0.0.0.0
+
+volumes:
+  postgres_data:
+
+networks:
+  cross-sell-network:
+    driver: bridge

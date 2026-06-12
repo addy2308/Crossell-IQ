@@ -1,0 +1,251 @@
+# Prometheus Alert Rules for Netflix Cross-Sell API
+# Defines alerting conditions and thresholds
+
+groups:
+  - name: netflix_api_alerts
+    interval: 30s
+    rules:
+      # API Performance Alerts
+      - alert: HighAPIResponseTime
+        expr: rate(http_request_duration_seconds_sum[5m]) / rate(http_request_duration_seconds_count[5m]) > 0.5
+        for: 5m
+        labels:
+          severity: warning
+          component: api
+        annotations:
+          summary: "High API response time detected"
+          description: "Average response time is {{ $value | humanize }}s"
+          dashboard: "http://localhost:3000/d/netflix-api"
+      
+      - alert: CriticalAPIResponseTime
+        expr: rate(http_request_duration_seconds_sum[5m]) / rate(http_request_duration_seconds_count[5m]) > 1.0
+        for: 2m
+        labels:
+          severity: critical
+          component: api
+        annotations:
+          summary: "Critical API response time"
+          description: "Average response time is {{ $value | humanize }}s - immediate action required"
+      
+      # API Error Rate Alerts
+      - alert: HighAPIErrorRate
+        expr: rate(http_requests_total{status=~"5.."}[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+          component: api
+        annotations:
+          summary: "High API error rate detected"
+          description: "Error rate is {{ $value | humanizePercentage }} of total requests"
+      
+      - alert: CriticalAPIErrorRate
+        expr: rate(http_requests_total{status=~"5.."}[5m]) > 0.1
+        for: 1m
+        labels:
+          severity: critical
+          component: api
+        annotations:
+          summary: "Critical API error rate"
+          description: "Error rate is {{ $value | humanizePercentage }} - check logs immediately"
+      
+      # Model Performance Alerts
+      - alert: ModelPredictionLatency
+        expr: histogram_quantile(0.95, rate(netflix_model_prediction_seconds_bucket[5m])) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          component: model
+        annotations:
+          summary: "Model prediction latency high"
+          description: "95th percentile latency is {{ $value | humanize }}s"
+      
+      - alert: ModelErrorRate
+        expr: rate(netflix_model_errors_total[5m]) > 0.01
+        for: 5m
+        labels:
+          severity: warning
+          component: model
+        annotations:
+          summary: "Model error rate elevated"
+          description: "Error rate is {{ $value | humanizePercentage }}"
+      
+      # Database Alerts
+      - alert: DatabaseConnectionPoolExhausted
+        expr: pg_stat_activity_count / pg_settings_max_connections > 0.8
+        for: 5m
+        labels:
+          severity: warning
+          component: database
+        annotations:
+          summary: "Database connection pool usage high"
+          description: "{{ $value | humanizePercentage }} of max connections in use"
+      
+      - alert: DatabaseSlowQueries
+        expr: rate(pg_stat_statements_mean_exec_time[5m]) > 1000
+        for: 10m
+        labels:
+          severity: warning
+          component: database
+        annotations:
+          summary: "Slow database queries detected"
+          description: "Average query time is {{ $value | humanize }}ms"
+      
+      - alert: DatabaseHighLoadAverage
+        expr: pg_stat_activity_count > 20
+        for: 5m
+        labels:
+          severity: warning
+          component: database
+        annotations:
+          summary: "Database load is high"
+          description: "{{ $value }} active connections"
+      
+      # Redis Cache Alerts
+      - alert: RedisCacheMisses
+        expr: rate(redis_keyspace_misses_total[5m]) / (rate(redis_keyspace_hits_total[5m]) + rate(redis_keyspace_misses_total[5m])) > 0.3
+        for: 5m
+        labels:
+          severity: warning
+          component: cache
+        annotations:
+          summary: "High Redis cache miss rate"
+          description: "Cache miss rate is {{ $value | humanizePercentage }}"
+      
+      - alert: RedisMemoryUsage
+        expr: redis_memory_used_bytes / redis_memory_max_bytes > 0.9
+        for: 5m
+        labels:
+          severity: critical
+          component: cache
+        annotations:
+          summary: "Redis memory usage critical"
+          description: "{{ $value | humanizePercentage }} of max memory used"
+      
+      # System Resource Alerts
+      - alert: HighCPUUsage
+        expr: (1 - avg(rate(node_cpu_seconds_total{mode="idle"}[5m]))) > 0.8
+        for: 5m
+        labels:
+          severity: warning
+          component: system
+        annotations:
+          summary: "High CPU usage detected"
+          description: "CPU usage is {{ $value | humanizePercentage }}"
+      
+      - alert: HighMemoryUsage
+        expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) > 0.85
+        for: 5m
+        labels:
+          severity: warning
+          component: system
+        annotations:
+          summary: "High memory usage detected"
+          description: "Memory usage is {{ $value | humanizePercentage }}"
+      
+      - alert: DiskSpaceLow
+        expr: (node_filesystem_avail_bytes{fstype!~"tmpfs"} / node_filesystem_size_bytes) < 0.15
+        for: 5m
+        labels:
+          severity: critical
+          component: system
+        annotations:
+          summary: "Low disk space"
+          description: "Only {{ $value | humanizePercentage }} of disk space available"
+      
+      # Service Availability Alerts
+      - alert: APIServiceDown
+        expr: up{job="netflix-backend"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: api
+        annotations:
+          summary: "API service is down"
+          description: "Netflix API has been unavailable for 1 minute"
+      
+      - alert: DatabaseDown
+        expr: up{job="postgresql"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: database
+        annotations:
+          summary: "Database service is down"
+          description: "PostgreSQL has been unavailable for 1 minute"
+      
+      - alert: RedisDown
+        expr: up{job="redis"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: cache
+        annotations:
+          summary: "Redis service is down"
+          description: "Redis has been unavailable for 1 minute"
+      
+      # Request Rate Alerts
+      - alert: UnusuallyHighRequestRate
+        expr: rate(http_requests_total[5m]) > 1000
+        for: 5m
+        labels:
+          severity: warning
+          component: api
+        annotations:
+          summary: "Unusually high request rate"
+          description: "Request rate is {{ $value | humanize }} req/s"
+      
+      - alert: RateLimitApproaching
+        expr: (rate(http_requests_total[5m]) / 10000) > 0.8
+        for: 3m
+        labels:
+          severity: warning
+          component: api
+        annotations:
+          summary: "Approaching rate limit"
+          description: "{{ $value | humanizePercentage }} of rate limit capacity"
+      
+      # Batch Prediction Alerts
+      - alert: HighBatchPredictionLatency
+        expr: rate(netflix_batch_prediction_seconds_sum[5m]) / rate(netflix_batch_prediction_seconds_count[5m]) > 2
+        for: 5m
+        labels:
+          severity: warning
+          component: model
+        annotations:
+          summary: "Batch prediction latency elevated"
+          description: "Average batch prediction time is {{ $value | humanize }}s"
+      
+      # Alert for Missing Metrics
+      - alert: MetricsNotUpdating
+        expr: (time() - timestamp(rate(http_requests_total[5m]))) > 600
+        for: 5m
+        labels:
+          severity: warning
+          component: monitoring
+        annotations:
+          summary: "Prometheus metrics not updating"
+          description: "No new metrics received for 10+ minutes from API service"
+
+  - name: sla_alerts
+    interval: 60s
+    rules:
+      # SLA Monitoring
+      - alert: APISLAViolation
+        expr: (rate(http_requests_total{status=~"5.."}[1h]) / rate(http_requests_total[1h])) > 0.001
+        for: 30m
+        labels:
+          severity: critical
+          component: sla
+        annotations:
+          summary: "API SLA violation detected"
+          description: "Error rate {{ $value | humanizePercentage }} exceeds 0.1% target"
+      
+      - alert: AvailabilitySLAViolation
+        expr: (count(up{job="netflix-backend"} == 0) / count(up{job="netflix-backend"})) > 0.01
+        for: 15m
+        labels:
+          severity: critical
+          component: sla
+        annotations:
+          summary: "Availability SLA violation"
+          description: "Service availability dropped below 99%"
