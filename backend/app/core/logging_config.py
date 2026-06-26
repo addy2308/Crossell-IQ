@@ -1,31 +1,25 @@
-import structlog
 import logging
+import sys
 from pathlib import Path
 
 def setup_logging(log_level: str = "INFO"):
     logs_dir = Path(__file__).parent.parent.parent / "logs"
     logs_dir.mkdir(exist_ok=True)
 
-    structlog.configure(
-        processors=[
-            structlog.stdlib.filter_by_level,
-            structlog.stdlib.add_log_level,
-            structlog.stdlib.PositionalArgumentsFormatter(),
-            structlog.processors.TimeStamper(fmt="iso"),
-            structlog.processors.StackInfoRenderer(),
-            structlog.processors.format_exc_info,
-            structlog.processors.UnicodeDecoder(),
-            structlog.dev.ConsoleRenderer() if log_level == "DEBUG" else structlog.processors.JSONRenderer()
-        ],
-        context_class=dict,
-        logger_factory=structlog.stdlib.LoggerFactory(),
-        wrapper_class=structlog.stdlib.BoundLogger,
-        cache_logger_on_first_use=True,
+    formatter = logging.Formatter(
+        '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
     )
+
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setFormatter(formatter)
+
+    file_handler = logging.FileHandler(logs_dir / "api.log")
+    file_handler.setFormatter(formatter)
 
     root_logger = logging.getLogger()
     root_logger.setLevel(getattr(logging, log_level.upper()))
-    handler = logging.StreamHandler()
-    root_logger.addHandler(handler)
+    root_logger.addHandler(console_handler)
+    root_logger.addHandler(file_handler)
 
-    return structlog.get_logger()
+    return logging.getLogger(__name__)
