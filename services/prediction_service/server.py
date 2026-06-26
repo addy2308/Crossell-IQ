@@ -6,7 +6,7 @@ import joblib
 from pathlib import Path
 import redis
 import json
-import os
+import os 
 from fastapi import FastAPI
 import uvicorn
 
@@ -64,3 +64,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+     
