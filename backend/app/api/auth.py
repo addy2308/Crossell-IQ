@@ -1,10 +1,17 @@
-from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, EmailStr
-from sqlalchemy.ext.asyncio import AsyncSession
-from app.database import get_db
-from app.services.auth_service import AuthService
+from fastapi import APIRouter, HTTPException, Depends
+from pydantic import BaseModel
+from datetime import datetime, timedelta
+from jose import jwt, JWTError
+from passlib.context import CryptContext
+import sqlite3
+import os
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
+SECRET_KEY = os.getenv("SECRET_KEY", "dev-secret-key-change-in-production")
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 60
+# Use sha256_crypt – avoids bcrypt compatibility problems on Render
+pwd_context = CryptContext(schemes=["sha256_crypt"], deprecated="auto")
 
 class LoginRequest(BaseModel):
     email: str
@@ -15,40 +22,47 @@ class RegisterRequest(BaseModel):
     email: str
     password: str
     role: str = "agent"
-    region: str = None
 
-class TokenResponse(BaseModel):
-    access_token: str
-    token_type: str = "bearer"
-    name: str
-    role: str
-    agent_id: str
+def create_access_token(data: dict) -> str:
+    to_encode = data.copy()
+    expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    to_encode.update({"exp": expire})
+    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
-@router.post("/login", response_model=TokenResponse)
-async def login(request: LoginRequest, db: AsyncSession = Depends(get_db)):
-    auth = AuthService(db)
-    agent = await auth.authenticate(request.email, request.password)
-    
-    if not agent:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
-    
-    token = auth.create_token(agent)
-    await auth.log_audit(agent.agent_id, "login", "User logged in")
-    
-    return TokenResponse(
-        access_token=token,
-        name=agent.name,
-        role=agent.role,
-        agent_id=agent.agent_id
-    )
-
-@router.post("/register", response_model=TokenResponse)
-async def register(request: RegisterRequest, db: AsyncSession = Depends(get_db)):
-    auth = AuthService(db)
-    
+def init_db():
+    conn = sqlite3.connect("users.db")
+    conn.execute("CREATE TABLE IF NOT EXISTS users (email TEXT PRIMARY KEY, name TEXT, hashed_password TEXT, role TEXT)")
+    # Add a default admin user (password: admin123)
     try:
-        agent = await auth.create_agent(request.name, request.email, request.password, request.role, request.region)
-        token = auth.create_token(agent)
-        return TokenResponse(access_token=token, name=agent.name, role=agent.role, agent_id=agent.agent_id)
-    except Exception as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        conn.execute("INSERT INTO users VALUES (?,?,?,?)",
+                     ("admin@crosselliq.com", "Admin Kumar", pwd_context.hash("admin123"), "admin"))
+    except sqlite3.IntegrityError:
+        pass
+    conn.commit()
+    conn.close()
+
+init_db()
+
+@router.post("/login")
+async def login(request: LoginRequest):
+    conn = sqlite3.connect("users.db")
+    user = conn.execute("SELECT * FROM users WHERE email=?", (request.email,)).fetchone()
+    conn.close()
+    if not user or not pwd_context.verify(request.password, user[2]):
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+    token = create_access_token({"sub": user[0], "name": user[1], "role": user[3]})
+    return {"access_token": token, "token_type": "bearer", "name": user[1], "role": user[3], "agent_id": user[0]}
+
+@router.post("/register")
+async def register(request: RegisterRequest):
+    conn = sqlite3.connect("users.db")
+    try:
+        conn.execute("INSERT INTO users VALUES (?,?,?,?)",
+                     (request.email, request.name, pwd_context.hash(request.password), request.role))
+        conn.commit()
+    except sqlite3.IntegrityError:
+        raise HTTPException(status_code=400, detail="Email already registered")
+    finally:
+        conn.close()
+    token = create_access_token({"sub": request.email, "name": request.name, "role": request.role})
+    return {"access_token": token, "token_type": "bearer", "name": request.name, "role": request.role, "agent_id": request.email}

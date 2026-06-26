@@ -92,7 +92,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:#060b14;color:#e2e8f0;o
       <label class="text-brand-300 text-sm">Email</label>
       <input type="email" id="auth-email" class="w-full p-3 rounded-lg bg-[#0a1220] border border-brand-500/20 text-white mt-1 mb-3" placeholder="admin@crosselliq.com" required>
       <label class="text-brand-300 text-sm">Password</label>
-      <input type="password" id="auth-password" class="w-full p-3 rounded-lg bg-[#0a1220] border border-brand-500/20 text-white mt-1 mb-1" placeholder="••••••••" required>
+      <input type="password" id="auth-password" class="w-full p-3 rounded-lg bg-[#0a1220] border border-brand-500/20 text-white mt-1 mb-1" placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢" required>
       <div class="password-strength" id="password-strength"></div>
       <div id="auth-error" class="text-red-400 text-sm mt-3 hidden"></div>
       <button type="submit" id="auth-submit" class="w-full btn-primary py-3 rounded-lg font-semibold mt-4 ripple">Sign In</button>
@@ -210,7 +210,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:#060b14;color:#e2e8f0;o
 </div>
 
 <script>
-const API = 'http://127.0.0.1:8000/api/v1';
+const API = '/api/v1';
 let authToken = localStorage.getItem('access_token') || '';
 let currentUser = JSON.parse(localStorage.getItem('user') || 'null');
 let lastGoodKpis = null;
