@@ -11,6 +11,9 @@ COPY . .
 # Install Python dependencies
 RUN pip install --no-cache-dir -r backend/requirements.txt
 
+# Allow MLflow to use the filesystem backend
+ENV MLFLOW_ALLOW_FILE_STORE=true
+
 # Create folders for data and models
 RUN mkdir -p /app/data /app/models
 
