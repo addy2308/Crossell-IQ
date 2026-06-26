@@ -14,10 +14,12 @@ RUN pip install --no-cache-dir -r backend/requirements.txt
 # Create folders for data and models
 RUN mkdir -p /app/data /app/models
 
-# Generate synthetic Netflix data & train the model (only if model doesn’t exist)
+# Generate synthetic Netflix data, export to CSV, add segments, and train the model
+# (only if the model doesn’t already exist)
 RUN if [ ! -f /app/models/xgb_model.pkl ]; then \
       cd /app && \
       python ml_pipeline/generate_netflix_demo.py && \
+      python ml_pipeline/export_netflix_to_csv.py && \
       python ml_pipeline/add_segments.py && \
       python models/train_model.py; \
     fi
