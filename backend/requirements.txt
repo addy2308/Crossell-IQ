@@ -25,3 +25,16 @@ numpy
 scikit-learn
 joblib
 prometheus_client
+celery
+redis
+sqlalchemy
+aiosqlite
+pydantic
+pydantic-settings
+python-jose
+passlib
+python-multipart
+httpx
+pytest
+pytest-asyncio
+pytest-cov
